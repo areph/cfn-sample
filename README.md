@@ -1,0 +1,2 @@
+# cfn-sample
+CloudFormationのサンプルテンプレート
