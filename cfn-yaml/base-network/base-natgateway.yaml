@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  NAT Gateway Craete: Craete NAT Gateway for input project.
+
+# This template creates:
+#   NAT Gateway
+
+######################
+# Metadata section
+######################
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - OwnerName
+    ParameterLabels:
+      ProjectName:
+        default: "Project Name"
+      OwnerName:
+        default: "Name of the owner of this stack"
+
+######################
+# Parameters section
+######################
+
+Parameters:
+  ProjectName:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+
+  OwnerName:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
+
+######################
+# Mappings section
+######################
+
+Mappings:
+  TagsMap:
+    EnvName:
+      CreatedBy: "CFn"
+
+######################
+# Resources section
+######################
+
+Resources:
+  ## NATGateway
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP.AllocationId
+      SubnetId:
+        Fn::ImportValue: !Sub "${ProjectName}-PrivateSubnet1"
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-NATGateway"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  ## Elastic IP
+
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-EIP"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  # Private Route Table Update
+  PrivateRouteTableUpdate:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Fn::ImportValue: !Sub "${ProjectName}-PrivateRouteTable"
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NATGateway
+
+######################
+# Outputs section
+######################
+
+Outputs:
+  NATGateway:
+    Value: !Ref NATGateway
+    Export:
+      Name: !Sub "${ProjectName}-NATGateway"

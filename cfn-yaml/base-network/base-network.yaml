@@ -1,0 +1,390 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Network Base Template: base template that creates a VPC with DNS and public IPs enabled.
+
+# This template creates:
+#   VPC
+#   Internet Gateway
+#   Public Route Table
+#   Private Route Table
+#   Public Subnet
+#   Private Subnet
+
+######################
+# Metadata section
+######################
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - OwnerName
+          - CostCenter
+          - Environment
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VPCCIDR
+    ParameterLabels:
+      ProjectName:
+        default: "Project Name"
+      OwnerName:
+        default: "Name of the owner of this stack"
+      VPCCIDR:
+        default: "VPC CIDR"
+
+######################
+# Parameters section
+######################
+
+Parameters:
+  ProjectName:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+
+  OwnerName:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+
+  CostCenter:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+
+  Environment:
+    Type: String
+    "AllowedValues": ["test", "staging", "production"]
+
+  VPCCIDR:
+    Type: String
+    Default: "10.0.0.0/16"
+
+######################
+# Mappings section
+######################
+
+Mappings:
+  TagsMap:
+    EnvName:
+      CreatedBy: "CFn"
+
+######################
+# Resources section
+######################
+
+Resources:
+  ## VPC
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !Sub ${VPCCIDR}
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-VPC"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+        - Key: "Environment"
+          Value: !Sub ${Environment}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  ## Internet Gateway
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-IGW"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+        - Key: "Environment"
+          Value: !Sub ${Environment}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  ## Public Route Table
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-PublicRouteTable"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+        - Key: "Environment"
+          Value: !Sub ${Environment}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  ## Public Subnet
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [0, !Cidr [!GetAtt VPC.CidrBlock, 1, 8]]
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-PublicSubnet1"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+        - Key: "Environment"
+          Value: !Sub ${Environment}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  PublicSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetNetworkAclAssociation1:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      NetworkAclId: !GetAtt
+        - VPC
+        - DefaultNetworkAcl
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [1, !Cidr [!GetAtt VPC.CidrBlock, 2, 8]]
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-PublicSubnet2"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+        - Key: "Environment"
+          Value: !Sub ${Environment}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetNetworkAclAssociation2:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      NetworkAclId: !GetAtt
+        - VPC
+        - DefaultNetworkAcl
+
+  ## Private Route Table
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-PrivateRouteTable"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+        - Key: "Environment"
+          Value: !Sub ${Environment}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  ## Private Subnet
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [2, !Cidr [!GetAtt VPC.CidrBlock, 3, 9]]
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-PrivateSubnet1"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+        - Key: "Environment"
+          Value: !Sub ${Environment}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  PrivateSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetNetworkAclAssociation1:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      NetworkAclId: !GetAtt
+        - VPC
+        - DefaultNetworkAcl
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [3, !Cidr [!GetAtt VPC.CidrBlock, 4, 9]]
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-PrivateSubnet2"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+        - Key: "Environment"
+          Value: !Sub ${Environment}
+        - Key: "CreatedBy"
+          Value: !FindInMap
+            - TagsMap
+            - EnvName
+            - CreatedBy
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetNetworkAclAssociation2:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      NetworkAclId: !GetAtt
+        - VPC
+        - DefaultNetworkAcl
+
+######################
+# Outputs section
+######################
+
+Outputs:
+  PublicSubnet1:
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub "${ProjectName}-PublicSubnet1"
+
+  PublicSubnet2:
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub "${ProjectName}-PublicSubnet2"
+
+  PublicRouteTableUpdate:
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: !Sub "${ProjectName}-PublicRouteTable"
+
+  PrivateSubnet1:
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub "${ProjectName}-PrivateSubnet1"
+
+  PrivateSubnet2:
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub "${ProjectName}-PrivateSubnet2"
+
+  PrivateRouteTableUpdate:
+    Value: !Ref PrivateRouteTable
+    Export:
+      Name: !Sub "${ProjectName}-PrivateRouteTable"
+
+  VPC:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${ProjectName}-VPC"
