@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Application Template: Demonstrates how to reference resources from a different stack.
+  This template provisions an EC2 instance in a VPC Subnet provisioned in a different stack.
+
+# This template creates:
+#   Amazon EC2 instance
+#   Security Group
+
+######################
+# Metadata section
+######################
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - OwnerName
+    ParameterLabels:
+      ProjectName:
+        default: "Project Name Prefix"
+      OwnerName:
+        default: "Name of the owner of this stack"
+
+######################
+# Parameters section
+######################
+
+Parameters:
+  ProjectName:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+
+  OwnerName:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
+
+  CostCenter:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+
+  AmazonLinuxAMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+  InstanceType:
+    Type: String
+    AllowedValues: ["t2.micro", "t3.micro", "t3.nano"]
+
+  SSMManageRole:
+    Type: String
+    Default: ""
+
+Conditions:
+  ExistsInstanceProfile: !Not
+    - !Equals
+      - !Ref SSMManageRole
+      - ""
+
+######################
+# Resources section
+######################
+
+Resources:
+  WebServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmazonLinuxAMIID
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref WebServerSecurityGroup
+          AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          DeleteOnTermination: true
+          SubnetId:
+            Fn::ImportValue: !Sub ${ProjectName}-PublicSubnet1
+      IamInstanceProfile:
+        Fn::If:
+          - ExistsInstanceProfile
+          - !Ref SSMManageRole
+          - !Ref AWS::NoValue
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-WebServer"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+
+  WebDiskVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: 100
+      AvailabilityZone: !GetAtt WebServerInstance.AvailabilityZone
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-WebDiskVolume"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+
+  WebDiskVolumeMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref WebServerInstance
+      VolumeId: !Ref WebDiskVolume
+      Device: /dev/sdh
+
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP ingress
+      GroupName: !Sub "${ProjectName}-WebServerSecurityGroup"
+      VpcId:
+        Fn::ImportValue: !Sub ${ProjectName}-VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-WebServerSecurityGroup"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+
+  AppServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmazonLinuxAMIID
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref AppServerSecurityGroup
+          AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          DeleteOnTermination: true
+          SubnetId:
+            Fn::ImportValue: !Sub ${ProjectName}-PrivateSubnet1
+      IamInstanceProfile:
+        Fn::If:
+          - ExistsInstanceProfile
+          - !Ref SSMManageRole
+          - !Ref AWS::NoValue
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-AppServer"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+
+  AppDiskVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: 100
+      AvailabilityZone: !GetAtt WebServerInstance.AvailabilityZone
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-AppDiskVolume"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+
+  AppDiskVolumeMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref AppServerInstance
+      VolumeId: !Ref AppDiskVolume
+      Device: /dev/sdh
+
+  AppServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Enable ${ProjectName}-WebServerSecurityGroup ingress"
+      GroupName: !Sub "${ProjectName}-AppServerSecurityGroup"
+      VpcId:
+        Fn::ImportValue: !Sub ${ProjectName}-VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !GetAtt WebServerSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-AppServerSecurityGroup"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}

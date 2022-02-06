@@ -210,6 +210,13 @@ Resources:
         - Key: "Project"
           Value: !Sub ${ProjectName}
 
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
   ## Private Subnet
 
   PrivateSubnet1:
@@ -277,6 +284,39 @@ Resources:
       NetworkAclId: !GetAtt
         - VPC
         - DefaultNetworkAcl
+
+  ## NATGateway
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-NATGateway"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+
+  ## Elastic IP
+
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-EIP"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
 
 ######################
 # Outputs section

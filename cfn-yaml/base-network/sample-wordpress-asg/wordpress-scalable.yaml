@@ -1,0 +1,568 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Sample Template WordPress_Multi_AZ: WordPress is web
+  software you can use to create a beautiful website or blog. This template
+  installs a highly-available, scalable WordPress deployment using a multi-az
+  Amazon RDS database instance for storage. It demonstrates using the AWS
+  CloudFormation bootstrap scripts to deploy WordPress. **WARNING** This
+  template creates an Amazon EC2 instance, an Application Load Balancer and an
+  Amazon RDS database instance. You will be billed for the AWS resources used if
+  you create a stack from this template.
+
+######################
+# Metadata section
+######################
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Configuration"
+        Parameters:
+          - ProjectName
+          - OwnerName
+          - CostCenter
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - PublicSubnets
+          - PrivateSubnets
+      - Label:
+          default: "Auto Scale Group Configuration"
+        Parameters:
+          - AmazonLinuxAMIID
+          - InstanceType
+          - SSMManageRole
+          - WebServerCapacity
+      - Label:
+          default: "RDS Configuration"
+        Parameters:
+          - DBName
+          - DBUser
+          - DBPassword
+          - DBClass
+          - DBAllocatedStorage
+          - MultiAZDatabase
+    ParameterLabels:
+      ProjectName:
+        default: "Project Name"
+      OwnerName:
+        default: "Name of the owner of this stack"
+
+######################
+# Parameters section
+######################
+Parameters:
+  VpcId:
+    Type: "AWS::EC2::VPC::Id"
+    Description: VpcId of your existing Virtual Private Cloud (VPC)
+    ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
+  PublicSubnets:
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Description: The list of public SubnetIds in your Virtual Private Cloud (VPC) for ALB
+    ConstraintDescription: >-
+      must be a list of at least two existing subnets associated with at least
+      two different availability zones. They should be residing in the selected
+      Virtual Private Cloud.
+  PrivateSubnets:
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Description: The list of private SubnetIds in your Virtual Private Cloud (VPC) for Web Server and RDS
+    ConstraintDescription: >-
+      must be a list of at least two existing subnets associated with at least
+      two different availability zones. They should be residing in the selected
+      Virtual Private Cloud.
+  AmazonLinuxAMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-kernel-5.10-hvm-x86_64-gp2
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  DBClass:
+    Description: Database instance class
+    Type: String
+    Default: db.t2.small
+    AllowedValues:
+      - db.t1.micro
+      - db.m1.small
+      - db.m1.medium
+      - db.m1.large
+      - db.m1.xlarge
+      - db.m2.xlarge
+      - db.m2.2xlarge
+      - db.m2.4xlarge
+      - db.m3.medium
+      - db.m3.large
+      - db.m3.xlarge
+      - db.m3.2xlarge
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.m4.4xlarge
+      - db.m4.10xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+      - db.m2.xlarge
+      - db.m2.2xlarge
+      - db.m2.4xlarge
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+    ConstraintDescription: must select a valid database instance type.
+  DBName:
+    Default: wordpressdb
+    Description: The WordPress database name
+    Type: String
+    MinLength: "1"
+    MaxLength: "64"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBUser:
+    NoEcho: "true"
+    Description: The WordPress database admin account username
+    Type: String
+    MinLength: "1"
+    MaxLength: "16"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: "true"
+    Description: The WordPress database admin account password
+    Type: String
+    MinLength: "8"
+    MaxLength: "41"
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: must contain only alphanumeric characters.
+  MultiAZDatabase:
+    Default: "false"
+    Description: Create a Multi-AZ MySQL Amazon RDS database instance
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    ConstraintDescription: must be either true or false.
+  WebServerCapacity:
+    Default: 1
+    Description: The initial number of WebServer instances
+    Type: Number
+    MinValue: 1
+    MaxValue: 5
+    ConstraintDescription: must be between 1 and 5 EC2 instances.
+  DBAllocatedStorage:
+    Default: 5
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: 5
+    MaxValue: 1024
+    ConstraintDescription: must be between 5 and 1024Gb.
+  ProjectName:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+  OwnerName:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+  CostCenter:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+  SSMManageRole:
+    Description: (option)AmazonSSMManagedInstanceCore policy atached role name
+    Type: String
+    Default: ""
+
+Conditions:
+  ExistsInstanceProfile: !Not
+    - !Equals
+      - !Ref SSMManageRole
+      - ""
+
+Resources:
+  ALBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: >-
+        Enable HTTP access via port 80 locked down to the load balancer
+        access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-ALB-SG"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+  ApplicationLoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: !Sub "${ProjectName}-ALB"
+      Subnets: !Ref PublicSubnets
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-ALB"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+  ALBListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: "80"
+      Protocol: HTTP
+  ALBTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckPath: /wordpress/wp-admin/install.php
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VpcId
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: "true"
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: "30"
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-TargetGroup"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+  WebServerSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: >-
+        Enable HTTP access via port 80 locked down to the load balancer
+        access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "80"
+          ToPort: "80"
+          SourceSecurityGroupId: !Select
+            - 0
+            - !GetAtt
+              - ApplicationLoadBalancer
+              - SecurityGroups
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-WEB-SG"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+  WebServerGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      AutoScalingGroupName: !Sub "${ProjectName}-ASG"
+      VPCZoneIdentifier: !Ref PrivateSubnets
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: "1"
+      MaxSize: "5"
+      DesiredCapacity: !Ref WebServerCapacity
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-ASG"
+          PropagateAtLaunch: true
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+          PropagateAtLaunch: true
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+          PropagateAtLaunch: true
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT10M
+        WaitOnResourceSignals: true
+  LaunchConfig:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Metadata:
+      "AWS::CloudFormation::Init":
+        configSets:
+          wordpress_install:
+            - install_cfn
+            - install_wordpress
+        install_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Join
+                - ""
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref "AWS::StackId"
+                  - |+
+
+                  - region=
+                  - !Ref "AWS::Region"
+                  - |+
+
+              mode: "000400"
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join
+                - ""
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - >
+                    path=Resources.LaunchConfig.Metadata.AWS::CloudFormation::Init
+                  - "action=/opt/aws/bin/cfn-init -v "
+                  - "         --stack "
+                  - !Ref "AWS::StackName"
+                  - "         --resource LaunchConfig "
+                  - "         --configsets wordpress_install "
+                  - "         --region "
+                  - !Ref "AWS::Region"
+                  - |+
+
+              mode: "000400"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        install_wordpress:
+          packages:
+            yum:
+              php73: []
+              php73-mysqlnd: []
+              mysql57: []
+              httpd24: []
+          sources:
+            /var/www/html: "http://wordpress.org/latest.tar.gz"
+          files:
+            /tmp/create-wp-config:
+              content: !Join
+                - ""
+                - - |
+                    #!/bin/bash
+                  - >
+                    cp /var/www/html/wordpress/wp-config-sample.php
+                    /var/www/html/wordpress/wp-config.php
+                  - sed -i "s/'database_name_here'/'
+                  - !Ref DBName
+                  - |
+                    '/g" wp-config.php
+                  - sed -i "s/'username_here'/'
+                  - !Ref DBUser
+                  - |
+                    '/g" wp-config.php
+                  - sed -i "s/'password_here'/'
+                  - !Ref DBPassword
+                  - |
+                    '/g" wp-config.php
+                  - sed -i "s/'localhost'/'
+                  - !GetAtt
+                    - DBInstance
+                    - Endpoint.Address
+                  - |
+                    '/g" wp-config.php
+              mode: "000500"
+              owner: root
+              group: root
+          commands:
+            01_configure_wordpress:
+              command: /tmp/create-wp-config
+              cwd: /var/www/html/wordpress
+          services:
+            sysvinit:
+              httpd:
+                enabled: "true"
+                ensureRunning: "true"
+    Properties:
+      ImageId: !Ref AmazonLinuxAMIID
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      IamInstanceProfile:
+        Fn::If:
+          - ExistsInstanceProfile
+          - !Ref SSMManageRole
+          - !Ref AWS::NoValue
+      UserData: !Base64
+        "Fn::Join":
+          - ""
+          - - |
+              #!/bin/bash -xe
+            - |
+              yum update -y aws-cfn-bootstrap
+            - "/opt/aws/bin/cfn-init -v "
+            - "         --stack "
+            - !Ref "AWS::StackName"
+            - "         --resource LaunchConfig "
+            - "         --configsets wordpress_install "
+            - "         --region "
+            - !Ref "AWS::Region"
+            - |+
+
+            - "/opt/aws/bin/cfn-signal -e $? "
+            - "         --stack "
+            - !Ref "AWS::StackName"
+            - "         --resource WebServerGroup "
+            - "         --region "
+            - !Ref "AWS::Region"
+            - |+
+
+  DBEC2SecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Open database for access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "3306"
+          ToPort: "3306"
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
+      VpcId: !Ref VpcId
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub "SubnetGroup for ${ProjectName}"
+      DBSubnetGroupName: !Sub "${ProjectName}-SubnetGroup"
+      SubnetIds: !Ref PrivateSubnets
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-SubnetGroup"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+  DBInstance:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      DBName: !Ref DBName
+      Engine: MySQL
+      MultiAZ: !Ref MultiAZDatabase
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBInstanceClass: !Ref DBClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBInstanceIdentifier: !Ref DBName
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !GetAtt
+          - DBEC2SecurityGroup
+          - GroupId
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${ProjectName}-MySQL-RDS"
+        - Key: "Owner"
+          Value: !Sub ${OwnerName}
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
+Outputs:
+  WebsiteURL:
+    Value: !Join
+      - ""
+      - - "http://"
+        - !GetAtt
+          - ApplicationLoadBalancer
+          - DNSName
+        - /wordpress
+    Description: WordPress Website

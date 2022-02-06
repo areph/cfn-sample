@@ -36,16 +36,11 @@ Parameters:
     Type: String
     MinLength: 1
     MaxLength: 255
-    AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
 
-######################
-# Mappings section
-######################
-
-Mappings:
-  TagsMap:
-    EnvName:
-      CreatedBy: "CFn"
+  CostCenter:
+    Type: String
+    MinLength: 1
+    MaxLength: 255
 
 ######################
 # Resources section
@@ -65,11 +60,10 @@ Resources:
           Value: !Sub "${ProjectName}-NATGateway"
         - Key: "Owner"
           Value: !Sub ${OwnerName}
-        - Key: "CreatedBy"
-          Value: !FindInMap
-            - TagsMap
-            - EnvName
-            - CreatedBy
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
 
   ## Elastic IP
 
@@ -82,11 +76,10 @@ Resources:
           Value: !Sub "${ProjectName}-EIP"
         - Key: "Owner"
           Value: !Sub ${OwnerName}
-        - Key: "CreatedBy"
-          Value: !FindInMap
-            - TagsMap
-            - EnvName
-            - CreatedBy
+        - Key: "CostCenter"
+          Value: !Sub ${CostCenter}
+        - Key: "Project"
+          Value: !Sub ${ProjectName}
 
   # Private Route Table Update
   PrivateRouteTableUpdate:
